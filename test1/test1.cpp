@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#define MAX_SIZE_T ((size_t)-1)
+
 template <typename T>
 class simple_vector
 {
@@ -96,7 +98,15 @@ public:
 		return true;
 	}
 
-private:
+	simple_vector<T> substring(size_t from, size_t to = MAX_SIZE_T)
+	{
+		if (to > size)
+			to = size;
+
+		return { buffer + from, from - size };
+	}
+
+protected:
 	T* buffer;
 	size_t buffsize;
 	size_t size;
@@ -115,6 +125,13 @@ public:
 	{
 		size_t l = strlen(text);
 		append(text, l);
+	}
+
+	const char* c_str()
+	{
+		resize_buffer(size + 1);
+		buffer[size] = 0;
+		return buffer;
 	}
 };
 
@@ -168,6 +185,7 @@ public:
 		return group;
 	}
 };
+
 
 
 
