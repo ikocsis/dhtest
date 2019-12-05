@@ -2,6 +2,8 @@
 //
 
 #include <windows.h>
+#include <type_traits>
+#include <iostream>
 
 #define MAX_SIZE_T ((size_t)-1)
 
@@ -65,6 +67,13 @@ public:
 
 	void clear()
 	{
+		if (std::is_class<T>::value)
+		{
+			for (size_t i = 0; i < size; ++i)
+			{
+				buffer[i].~T();
+			}
+		}
 		size = 0;
 	}
 
@@ -105,6 +114,7 @@ public:
 				return false;
 			it1++;
 			it2++;
+			i++;
 		}
 		return true;
 	}
@@ -112,14 +122,6 @@ public:
 	bool operator!=(const simple_vector<T>& other)
 	{
 		return !(operator==(other));
-	}
-
-	simple_vector<T> substring(size_t from, size_t to = MAX_SIZE_T)
-	{
-		if (to > size)
-			to = size;
-
-		return { buffer + from, from - size };
 	}
 
 	size_t get_size()
@@ -132,6 +134,9 @@ protected:
 	mutable size_t buffsize;
 	mutable size_t size;
 };
+
+template <typename T>
+T simple_vector<T>::end;
 
 // not null terminated
 class simple_string : public simple_vector<char>
@@ -146,6 +151,12 @@ public:
 	{
 		size_t l = strlen(text);
 		append(text, l);
+	}
+
+	simple_string(const char* text, size_t len)
+		: simple_vector<char>()
+	{
+		append(text, len);
 	}
 
 	const char* c_str() const
@@ -164,6 +175,65 @@ public:
 		}
 		return MAX_SIZE_T;
 	}
+
+	bool operator==(const char* other)
+	{
+		return simple_vector<char>::operator==(simple_string{ other });
+	}
+
+	bool operator!=(const char* other)
+	{
+		return !simple_vector<char>::operator==(simple_string{ other });
+	}
+
+	bool operator==(const simple_string& other)
+	{
+		return simple_vector<char>::operator==(other);
+	}
+
+	bool operator!=(const simple_string& other)
+	{
+		return !simple_vector<char>::operator==(other);
+	}
+
+	simple_string substring(size_t from, size_t to = MAX_SIZE_T) const
+	{
+		if (to > size)
+			to = size;
+
+		return { buffer + from, to - from };
+	}
+
+	simple_vector<simple_string> split(const simple_string& separator) const
+	{
+		simple_vector<simple_string> res;
+
+		if (size <= separator.size)
+			return {};
+
+		size_t front = 0;
+		size_t pos = 0;
+
+		while (pos < (size - separator.size) )
+		{
+			simple_string act_str{ buffer + pos, separator.size };
+			if (act_str == separator)
+			{
+				simple_string asd{ buffer + front, pos - front };
+				res.append({ buffer + front, pos - front });
+				pos += separator.size - 1;
+				front = pos + 1;
+			}
+			pos++;
+		}
+
+		if (pos != size)
+		{
+			res.append({ buffer + front, size - front });
+		}
+
+		return res;
+	}
 };
 
 class node
@@ -176,6 +246,8 @@ public:
 
 	simple_string name;
 	simple_vector<node> childs;
+
+	simple_string value; 
 
 	node& get_element_by_name(const simple_string& element_name)
 	{
@@ -190,16 +262,17 @@ public:
 	}
 };
 
+node node::end;
+
 class element_node : public node
 {
 public:
-	element_node(const simple_string& _name)
+	element_node(const simple_string& _name, const simple_string& _value)
 		: node()
 	{
 		name = _name;
+		value = _value;
 	}
-
-	simple_string value;
 };
 
 class group_node : public node
@@ -229,20 +302,26 @@ public:
 		childs.append(group);
 		return group;
 	}
-};
 
-class config
-{
-public:
-	config()
-	{}
-
-	void load(const simple_string& file_name)
+	void clear()
 	{
-		
+		childs.clear();
 	}
 
+	void print()
+	{
+		std::cout << std::endl << "ROOT" << std::endl;
+		for (size_t g = 0; g < childs.get_size(); ++g)
+		{
+			group_node& group = (group_node&)childs[g];
+			for (size_t e = 0; e < group.childs.get_size(); ++e)
+			{
+				std::cout << "  " << group.name.c_str() << " / " << group.childs[e].name.c_str() << " = " << group.childs[e].value.c_str() << std::endl;
+			}
+		}
+	}
 };
+
 
 
 class file_base
@@ -332,24 +411,60 @@ public:
 	}
 };
 
+class ini_file_data
+{
+public:
+	ini_file_data(const simple_string& data)
+	{
+		root.clear();
+
+		simple_vector<simple_string> lines = data.split("\r\n");
+
+		size_t linenum = 0;
+
+		group_node* act_group_node = nullptr;
+
+		while (linenum < lines.get_size())
+		{
+			simple_string act_line = lines[linenum];
+			if (act_line.substring(0, 1) == "[")
+			{
+				if (act_group_node != nullptr)
+				{
+					root.append_child(*act_group_node);
+					delete act_group_node;
+				}
+
+				act_group_node = new group_node{ act_line.substring(1, act_line.get_size() - 1) };
+			}
+			else
+			{
+				if (act_group_node != nullptr)
+				{
+					simple_vector<simple_string> key_value_pair = act_line.split(" = ");
+					act_group_node->append_child({ key_value_pair[0], key_value_pair[1] });
+				}
+			}
+			linenum++;
+		}
+
+		if (act_group_node)
+		{
+			root.append_child(*act_group_node);
+			delete act_group_node;
+		}
+	}
+
+	root_node root;
+};
+
 int main()
 {
-	root_node root{};
-
-	group_node group1("GROUP1");
-	group_node group2("GROUP2");
-
-	group1.append_child({ "element1" });
-	group1.append_child({ "element2" });
-
-	group2.append_child({ "element3" });
-	group2.append_child({ "element4" });
-
-	root.append_child(group1);
-	root.append_child(group2);
-
 	win32_file file("a.ini");
 	simple_string ini_data = file.read();
+
+	ini_file_data ifd(ini_data);
+	ifd.root.print();
 
 	while (true)
 	{
@@ -360,7 +475,9 @@ int main()
 			if (new_ini_data != ini_data)
 			{
 				//change
-
+				ini_data = new_ini_data;
+				ini_file_data ifd2(ini_data);
+				ifd2.root.print();
 			}
 		}
 	}
